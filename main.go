@@ -30,6 +30,24 @@ type fileTuple struct {
 	File *github.CommitFile
 }
 
+type forceGraphLink struct {
+	Source string `json:"source"`
+	Target string `json:"target"`
+	Value  int    `json:"value"`
+}
+
+type forceGraphNode struct {
+	ID        string           `json:"id"`
+	Score     float64          `json:"score"`
+	Neighbors []string         `json:"neighbors"`
+	Links     []forceGraphLink `json:"links"`
+}
+
+type forceGraph struct {
+	Nodes []forceGraphNode `json:"nodes"`
+	Links []forceGraphLink `json:"links"`
+}
+
 func FolderTransform(key string) *diskv.PathKey {
 	path := strings.Split(key, "/")
 	last := len(path) - 1
@@ -225,18 +243,6 @@ func main() {
 			continue
 		}
 
-		isMigrationPR := false
-		for _, label := range review.PR.Labels {
-			if label.GetName() == "migrations-approved" {
-				log.Printf("Migration PR: %s", review.PR.GetHTMLURL())
-				isMigrationPR = true
-			}
-		}
-
-		if isMigrationPR {
-			continue
-		}
-
 		requestorID := review.PR.GetUser().GetID()
 		requestorLogin := review.PR.GetUser().GetLogin()
 		reviewerID := review.Review.GetUser().GetID()
@@ -337,4 +343,67 @@ func main() {
 		tup := unweightedTuples[len(unweightedTuples)-1-i]
 		log.Printf("%s: %.5f", userIDToLogin[tup.ID], tup.Rank)
 	}
+
+	forceGraphNodes := []forceGraphNode{}
+	forceGraphLinks := []forceGraphLink{}
+	nodeToNeighbors := make(map[string][]string)
+
+	for edge := range edgeFreq {
+		fLogin := userIDToLogin[edge.F.ID()]
+		tLogin := userIDToLogin[edge.T.ID()]
+
+		if _, ok := nodeToNeighbors[fLogin]; !ok {
+			nodeToNeighbors[fLogin] = []string{}
+		}
+		if _, ok := nodeToNeighbors[tLogin]; !ok {
+			nodeToNeighbors[tLogin] = []string{}
+		}
+
+		nodeToNeighbors[fLogin] = append(nodeToNeighbors[fLogin], tLogin)
+	}
+
+	minScore := weightedTuples[0].Rank
+	maxScore := weightedTuples[len(unweightedTuples)-1].Rank
+
+	for _, tup := range weightedTuples {
+		links := []forceGraphLink{}
+
+		for edge, freq := range edgeFreq {
+			if edge.F.ID() == tup.ID {
+				links = append(links, forceGraphLink{
+					Source: userIDToLogin[edge.F.ID()],
+					Target: userIDToLogin[edge.T.ID()],
+					Value:  freq,
+				})
+			}
+		}
+
+		score := (tup.Rank - minScore) / (maxScore - minScore)
+		log.Printf("User %s; Rank %f; Min %f; Max %f; Adjusted score %f", userIDToLogin[tup.ID], tup.Rank, minScore, maxScore, score)
+
+		forceGraphNodes = append(forceGraphNodes, forceGraphNode{
+			ID:        userIDToLogin[tup.ID],
+			Score:     score * 10,
+			Neighbors: nodeToNeighbors[userIDToLogin[tup.ID]],
+			Links:     links,
+		})
+	}
+
+	for edge, freq := range edgeFreq {
+		forceGraphLinks = append(forceGraphLinks, forceGraphLink{
+			Source: userIDToLogin[edge.F.ID()],
+			Target: userIDToLogin[edge.T.ID()],
+			Value:  freq,
+		})
+	}
+
+	forceGraph := forceGraph{
+		Nodes: forceGraphNodes,
+		Links: forceGraphLinks,
+	}
+
+	// io.Writer for file
+	f, _ := os.Create("force-graph.json")
+	defer f.Close()
+	json.NewEncoder(f).Encode(forceGraph)
 }
