@@ -4,6 +4,7 @@
   <script src="//unpkg.com/react/umd/react.production.min.js"></script>
   <script src="//unpkg.com/react-dom/umd/react-dom.production.min.js"></script>
   <script src="//unpkg.com/babel-standalone"></script>
+    <script src="//unpkg.com/d3-force"></script>
 
   <script src="//unpkg.com/three"></script>
   <script src="//unpkg.com/three/examples/js/renderers/CSS2DRenderer.js"></script>
@@ -31,10 +32,12 @@
 
 
 const HighlightGraph = ({data}) => {
-        const { useMemo, useState, useCallback } = React;
+        const { useMemo, useState, useCallback, useRef, useEffect } = React;
               const [highlightNodes, setHighlightNodes] = useState(new Set());
       const [highlightLinks, setHighlightLinks] = useState(new Set());
       const [hoverNode, setHoverNode] = useState(null);
+      const fgRef = useRef();
+      const  { nodes, links } = data;
 
             const updateHighlight = () => {
         setHighlightNodes(highlightNodes);
@@ -76,8 +79,35 @@ const HighlightGraph = ({data}) => {
       }, [hoverNode]);
 
 
+      useEffect(() => {
+        let minValue = Infinity;
+        let maxValue = -Infinity;
+        for (const l of links) {
+          minValue = Math.min(minValue, l.value);
+          maxValue = Math.max(maxValue, l.value);
+        }
 
-        return <ForceGraph3D
+        console.log(minValue, maxValue);
+
+    fgRef.current.d3Force('link').strength(0.05).distance(l => {
+      const ratio = (l.value - minValue) / (maxValue - minValue);
+      const scaled = (l.value * ratio);
+      const newDistance = maxValue - l.value;
+
+      console.log(l, ratio, newDistance);
+
+      return newDistance;
+    });
+  }, [links]);
+
+
+        return (
+    <div>
+    <div>
+      <span>This is just a test</span>
+      </div>
+    <ForceGraph3D
+        ref={fgRef}
           nodeRelSize={6}
           nodeVal={n => n.score * n.score}
           linkWidth={1}
@@ -111,6 +141,8 @@ const HighlightGraph = ({data}) => {
             node.fz = node.z;
           }}
         />
+    </div>
+    )
 };
 
     fetch('./force-graph.json').then(res => res.json()).then(data => {
