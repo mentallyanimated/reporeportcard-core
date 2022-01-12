@@ -6,7 +6,9 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"os"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -14,6 +16,7 @@ import (
 	"time"
 
 	"github.com/google/go-github/v41/github"
+	"github.com/mpraski/clusters"
 	"github.com/peterbourgon/diskv/v3"
 	"golang.org/x/oauth2"
 	"gonum.org/v1/gonum/graph/network"
@@ -79,6 +82,22 @@ func waitForRatelimit(r *github.Response) {
 			time.Sleep(time.Duration(wait) * time.Second)
 		}
 	}
+}
+
+// NormalizeVector normalizes a vector to have a length of 1.
+func NormalizeVector(v []float64) []float64 {
+	l := 0.0
+	for _, x := range v {
+		l += x * x
+	}
+	l = math.Sqrt(l)
+	if l == 0 {
+		return v
+	}
+	for i, x := range v {
+		v[i] = x / l
+	}
+	return v
 }
 
 func main() {
@@ -213,17 +232,17 @@ func main() {
 						b, _ := json.Marshal(allFiles)
 						d.Write(filesKey, b)
 
-						// for _, file := range allFiles {
-						// 	fileTupleChan <- fileTuple{pull, file}
-						// }
+						for _, file := range allFiles {
+							fileTupleChan <- fileTuple{pull, file}
+						}
 					} else {
 						b, _ := d.Read(filesKey)
 						var allFiles []*github.CommitFile
 						json.Unmarshal(b, &allFiles)
 
-						// for _, file := range allFiles {
-						// 	fileTupleChan <- fileTuple{pull, file}
-						// }
+						for _, file := range allFiles {
+							fileTupleChan <- fileTuple{pull, file}
+						}
 					}
 				}
 			}(i)
@@ -238,172 +257,243 @@ func main() {
 	totalApprovals := 0
 	edgeFreq := make(map[simple.Edge]int)
 
-	for review := range reviewTupleChan {
-		if review.Review.GetState() != "APPROVED" {
-			continue
+	var etlWG sync.WaitGroup
+	etlWG.Add(1)
+	go func() {
+		defer etlWG.Done()
+		for review := range reviewTupleChan {
+			if review.Review.GetState() != "APPROVED" {
+				continue
+			}
+
+			requestorID := review.PR.GetUser().GetID()
+			requestorLogin := review.PR.GetUser().GetLogin()
+			reviewerID := review.Review.GetUser().GetID()
+			reviewerLogin := review.Review.GetUser().GetLogin()
+
+			if requestorLogin == "" || reviewerLogin == "" || requestorLogin == "ghost" || reviewerLogin == "ghost" {
+				continue
+			}
+
+			if requestorLogin != "" {
+				userIDToLogin[requestorID] = requestorLogin
+			}
+			if reviewerLogin != "" {
+				userIDToLogin[reviewerID] = reviewerLogin
+			}
+
+			edge := simple.Edge{
+				F: simple.Node(requestorID),
+				T: simple.Node(reviewerID),
+			}
+
+			if _, ok := edgeFreq[edge]; ok {
+				edgeFreq[edge]++
+			} else {
+				edgeFreq[edge] = 1
+			}
+
+			totalApprovals++
 		}
 
-		requestorID := review.PR.GetUser().GetID()
-		requestorLogin := review.PR.GetUser().GetLogin()
-		reviewerID := review.Review.GetUser().GetID()
-		reviewerLogin := review.Review.GetUser().GetLogin()
+		weightedGraph := simple.NewWeightedDirectedGraph(0, 0)
+		unweightedGraph := simple.NewDirectedGraph()
 
-		if requestorLogin == "" || reviewerLogin == "" {
-			continue
+		for k, v := range edgeFreq {
+			weightedGraph.SetWeightedEdge(simple.WeightedEdge{
+				F: k.F,
+				T: k.T,
+				W: float64(v) / float64(totalApprovals),
+			})
+			unweightedGraph.SetEdge(simple.Edge{
+				F: k.F,
+				T: k.T,
+			})
+		}
+		log.Printf("%d total approvals", totalApprovals)
+
+		weightedPageRank := network.PageRank(weightedGraph, 0.85, 0.00000001)
+		unweightedPageRank := network.PageRank(unweightedGraph, 0.85, 0.00000001)
+
+		type tuple struct {
+			ID   int64
+			Rank float64
 		}
 
-		if requestorLogin != "" {
-			userIDToLogin[requestorID] = requestorLogin
-		}
-		if reviewerLogin != "" {
-			userIDToLogin[reviewerID] = reviewerLogin
-		}
+		weightedTuples := make([]tuple, len(weightedPageRank))
+		unweightedTuples := make([]tuple, len(unweightedPageRank))
 
-		edge := simple.Edge{
-			F: simple.Node(requestorID),
-			T: simple.Node(reviewerID),
-		}
-
-		if _, ok := edgeFreq[edge]; ok {
-			edgeFreq[edge]++
-		} else {
-			edgeFreq[edge] = 1
+		i := 0
+		for k, v := range weightedPageRank {
+			weightedTuples[i] = tuple{
+				ID:   k,
+				Rank: v,
+			}
+			i++
 		}
 
-		totalApprovals++
-	}
+		i = 0
+		for k, v := range unweightedPageRank {
+			unweightedTuples[i] = tuple{
+				ID:   k,
+				Rank: v,
+			}
+			i++
+		}
 
-	weightedGraph := simple.NewWeightedDirectedGraph(0, 0)
-	unweightedGraph := simple.NewDirectedGraph()
-
-	for k, v := range edgeFreq {
-		weightedGraph.SetWeightedEdge(simple.WeightedEdge{
-			F: k.F,
-			T: k.T,
-			W: float64(v) / float64(totalApprovals),
+		// sort tuples
+		sort.Slice(weightedTuples, func(i, j int) bool {
+			return weightedTuples[i].Rank < weightedTuples[j].Rank
 		})
-		unweightedGraph.SetEdge(simple.Edge{
-			F: k.F,
-			T: k.T,
+		sort.Slice(unweightedTuples, func(i, j int) bool {
+			return unweightedTuples[i].Rank < unweightedTuples[j].Rank
 		})
-	}
-	log.Printf("%d total approvals", totalApprovals)
 
-	weightedPageRank := network.PageRank(weightedGraph, 0.85, 0.00000001)
-	unweightedPageRank := network.PageRank(unweightedGraph, 0.85, 0.00000001)
+		log.Println()
+		log.Println("Weighted PageRank (normalized approvals frequency)")
+		log.Println("~~~~~~~~~~~~~~~~~")
 
-	type tuple struct {
-		ID   int64
-		Rank float64
-	}
-
-	weightedTuples := make([]tuple, len(weightedPageRank))
-	unweightedTuples := make([]tuple, len(unweightedPageRank))
-
-	i := 0
-	for k, v := range weightedPageRank {
-		weightedTuples[i] = tuple{
-			ID:   k,
-			Rank: v,
-		}
-		i++
-	}
-
-	i = 0
-	for k, v := range unweightedPageRank {
-		unweightedTuples[i] = tuple{
-			ID:   k,
-			Rank: v,
-		}
-		i++
-	}
-
-	// sort tuples
-	sort.Slice(weightedTuples, func(i, j int) bool {
-		return weightedTuples[i].Rank < weightedTuples[j].Rank
-	})
-	sort.Slice(unweightedTuples, func(i, j int) bool {
-		return unweightedTuples[i].Rank < unweightedTuples[j].Rank
-	})
-
-	log.Println()
-	log.Println("Weighted PageRank (normalized approvals frequency)")
-	log.Println("~~~~~~~~~~~~~~~~~")
-
-	for i := 0; i < 5; i++ {
-		tup := weightedTuples[len(weightedTuples)-1-i]
-		log.Printf("%s: %.5f", userIDToLogin[tup.ID], tup.Rank)
-	}
-
-	log.Println()
-	log.Println("Unweighted PageRank")
-	log.Println("~~~~~~~~~~~~~~~~~~~")
-
-	for i := 0; i < 5; i++ {
-		tup := unweightedTuples[len(unweightedTuples)-1-i]
-		log.Printf("%s: %.5f", userIDToLogin[tup.ID], tup.Rank)
-	}
-
-	forceGraphNodes := []forceGraphNode{}
-	forceGraphLinks := []forceGraphLink{}
-	nodeToNeighbors := make(map[string][]string)
-
-	for edge := range edgeFreq {
-		fLogin := userIDToLogin[edge.F.ID()]
-		tLogin := userIDToLogin[edge.T.ID()]
-
-		if _, ok := nodeToNeighbors[fLogin]; !ok {
-			nodeToNeighbors[fLogin] = []string{}
-		}
-		if _, ok := nodeToNeighbors[tLogin]; !ok {
-			nodeToNeighbors[tLogin] = []string{}
+		for i := 0; i < 5; i++ {
+			tup := weightedTuples[len(weightedTuples)-1-i]
+			log.Printf("%s: %.5f", userIDToLogin[tup.ID], tup.Rank)
 		}
 
-		nodeToNeighbors[fLogin] = append(nodeToNeighbors[fLogin], tLogin)
-	}
+		log.Println()
+		log.Println("Unweighted PageRank")
+		log.Println("~~~~~~~~~~~~~~~~~~~")
 
-	minScore := weightedTuples[0].Rank
-	maxScore := weightedTuples[len(unweightedTuples)-1].Rank
+		for i := 0; i < 5; i++ {
+			tup := unweightedTuples[len(unweightedTuples)-1-i]
+			log.Printf("%s: %.5f", userIDToLogin[tup.ID], tup.Rank)
+		}
 
-	for _, tup := range weightedTuples {
-		links := []forceGraphLink{}
+		forceGraphNodes := []forceGraphNode{}
+		forceGraphLinks := []forceGraphLink{}
+		nodeToNeighbors := make(map[string][]string)
+
+		for edge := range edgeFreq {
+			fLogin := userIDToLogin[edge.F.ID()]
+			tLogin := userIDToLogin[edge.T.ID()]
+
+			if _, ok := nodeToNeighbors[fLogin]; !ok {
+				nodeToNeighbors[fLogin] = []string{}
+			}
+			if _, ok := nodeToNeighbors[tLogin]; !ok {
+				nodeToNeighbors[tLogin] = []string{}
+			}
+
+			nodeToNeighbors[fLogin] = append(nodeToNeighbors[fLogin], tLogin)
+		}
+
+		minScore := weightedTuples[0].Rank
+		maxScore := weightedTuples[len(unweightedTuples)-1].Rank
+
+		for _, tup := range weightedTuples {
+			links := []forceGraphLink{}
+
+			for edge, freq := range edgeFreq {
+				if edge.F.ID() == tup.ID {
+					links = append(links, forceGraphLink{
+						Source: userIDToLogin[edge.F.ID()],
+						Target: userIDToLogin[edge.T.ID()],
+						Value:  freq,
+					})
+				}
+			}
+
+			score := (tup.Rank - minScore) / (maxScore - minScore)
+			// log.Printf("User %s; Rank %f; Min %f; Max %f; Adjusted score %f", userIDToLogin[tup.ID], tup.Rank, minScore, maxScore, score)
+
+			forceGraphNodes = append(forceGraphNodes, forceGraphNode{
+				ID:        userIDToLogin[tup.ID],
+				Score:     score * 10,
+				Neighbors: nodeToNeighbors[userIDToLogin[tup.ID]],
+				Links:     links,
+			})
+		}
 
 		for edge, freq := range edgeFreq {
-			if edge.F.ID() == tup.ID {
-				links = append(links, forceGraphLink{
-					Source: userIDToLogin[edge.F.ID()],
-					Target: userIDToLogin[edge.T.ID()],
-					Value:  freq,
-				})
-			}
+			forceGraphLinks = append(forceGraphLinks, forceGraphLink{
+				Source: userIDToLogin[edge.F.ID()],
+				Target: userIDToLogin[edge.T.ID()],
+				Value:  freq,
+			})
 		}
 
-		score := (tup.Rank - minScore) / (maxScore - minScore)
-		log.Printf("User %s; Rank %f; Min %f; Max %f; Adjusted score %f", userIDToLogin[tup.ID], tup.Rank, minScore, maxScore, score)
+		forceGraph := forceGraph{
+			Nodes: forceGraphNodes,
+			Links: forceGraphLinks,
+		}
 
-		forceGraphNodes = append(forceGraphNodes, forceGraphNode{
-			ID:        userIDToLogin[tup.ID],
-			Score:     score * 10,
-			Neighbors: nodeToNeighbors[userIDToLogin[tup.ID]],
-			Links:     links,
-		})
-	}
+		// io.Writer for file
+		f, _ := os.Create("force-graph.json")
+		defer f.Close()
+		json.NewEncoder(f).Encode(forceGraph)
+	}()
 
-	for edge, freq := range edgeFreq {
-		forceGraphLinks = append(forceGraphLinks, forceGraphLink{
-			Source: userIDToLogin[edge.F.ID()],
-			Target: userIDToLogin[edge.T.ID()],
-			Value:  freq,
-		})
-	}
+	etlWG.Add(1)
+	go func() {
+		defer etlWG.Done()
+		fileTouchFrequency := map[string]map[string]int{}
+		logins := map[string]struct{}{}
+		uniqueLogins := []string{}
+		filePaths := map[string]struct{}{}
+		uniqueFilePaths := []string{}
 
-	forceGraph := forceGraph{
-		Nodes: forceGraphNodes,
-		Links: forceGraphLinks,
-	}
+		for fileTup := range fileTupleChan {
+			login := fileTup.PR.GetUser().GetLogin()
+			filePath := path.Dir(fileTup.File.GetFilename())
 
-	// io.Writer for file
-	f, _ := os.Create("force-graph.json")
-	defer f.Close()
-	json.NewEncoder(f).Encode(forceGraph)
+			logins[login] = struct{}{}
+
+			if _, ok := fileTouchFrequency[login]; !ok {
+				fileTouchFrequency[login] = map[string]int{}
+			}
+			if _, ok := fileTouchFrequency[login][filePath]; !ok {
+				fileTouchFrequency[login][filePath] = 0
+			}
+			fileTouchFrequency[login][filePath]++
+
+			filePaths[filePath] = struct{}{}
+		}
+
+		for login := range logins {
+			uniqueLogins = append(uniqueLogins, login)
+		}
+		sort.Strings(uniqueLogins)
+
+		for filePath := range filePaths {
+			uniqueFilePaths = append(uniqueFilePaths, filePath)
+		}
+		sort.Strings(uniqueFilePaths)
+
+		vectorSpace := make([][]float64, len(uniqueLogins))
+
+		for i, login := range uniqueLogins {
+			vectorSpace[i] = make([]float64, len(uniqueFilePaths))
+			for j, filePath := range uniqueFilePaths {
+				vectorSpace[i][j] = float64(fileTouchFrequency[login][filePath])
+			}
+
+			// vectorSpace[i] = NormalizeVector(vectorSpace[i])
+		}
+
+		now := time.Now()
+		log.Println("Estimating number of groups")
+		c, e := clusters.KMeansEstimator(1000, len(uniqueLogins)/2, clusters.EuclideanDistance)
+		if e != nil {
+			log.Fatal(e)
+		}
+
+		r, e := c.Estimate(vectorSpace)
+		if e != nil {
+			log.Fatal(e)
+		}
+		log.Printf("Execution time: %s", time.Since(now))
+
+		fmt.Printf("Estimated number of clusters: %d\n", r)
+	}()
+
+	etlWG.Wait()
+
 }
