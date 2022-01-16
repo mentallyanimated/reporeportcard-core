@@ -33,22 +33,22 @@ type fileTuple struct {
 	File *github.CommitFile
 }
 
-type forceGraphLink struct {
+type ForceGraphLink struct {
 	Source string `json:"source"`
 	Target string `json:"target"`
 	Value  int    `json:"value"`
 }
 
-type forceGraphNode struct {
+type ForceGraphNode struct {
 	ID        string           `json:"id"`
 	Score     float64          `json:"score"`
 	Neighbors []string         `json:"neighbors"`
-	Links     []forceGraphLink `json:"links"`
+	Links     []ForceGraphLink `json:"links"`
 }
 
-type forceGraph struct {
-	Nodes []forceGraphNode `json:"nodes"`
-	Links []forceGraphLink `json:"links"`
+type ForceGraph struct {
+	Nodes []ForceGraphNode `json:"nodes"`
+	Links []ForceGraphLink `json:"links"`
 }
 
 func FolderTransform(key string) *diskv.PathKey {
@@ -370,8 +370,8 @@ func old() {
 			log.Printf("%s: %.5f", userIDToLogin[tup.ID], tup.Rank)
 		}
 
-		forceGraphNodes := []forceGraphNode{}
-		forceGraphLinks := []forceGraphLink{}
+		forceGraphNodes := []ForceGraphNode{}
+		forceGraphLinks := []ForceGraphLink{}
 		nodeToNeighbors := make(map[string][]string)
 
 		for edge := range edgeFreq {
@@ -392,11 +392,11 @@ func old() {
 		maxScore := weightedTuples[len(unweightedTuples)-1].Rank
 
 		for _, tup := range weightedTuples {
-			links := []forceGraphLink{}
+			links := []ForceGraphLink{}
 
 			for edge, freq := range edgeFreq {
 				if edge.F.ID() == tup.ID {
-					links = append(links, forceGraphLink{
+					links = append(links, ForceGraphLink{
 						Source: userIDToLogin[edge.F.ID()],
 						Target: userIDToLogin[edge.T.ID()],
 						Value:  freq,
@@ -407,7 +407,7 @@ func old() {
 			score := (tup.Rank - minScore) / (maxScore - minScore)
 			// log.Printf("User %s; Rank %f; Min %f; Max %f; Adjusted score %f", userIDToLogin[tup.ID], tup.Rank, minScore, maxScore, score)
 
-			forceGraphNodes = append(forceGraphNodes, forceGraphNode{
+			forceGraphNodes = append(forceGraphNodes, ForceGraphNode{
 				ID:        userIDToLogin[tup.ID],
 				Score:     score * 10,
 				Neighbors: nodeToNeighbors[userIDToLogin[tup.ID]],
@@ -416,14 +416,14 @@ func old() {
 		}
 
 		for edge, freq := range edgeFreq {
-			forceGraphLinks = append(forceGraphLinks, forceGraphLink{
+			forceGraphLinks = append(forceGraphLinks, ForceGraphLink{
 				Source: userIDToLogin[edge.F.ID()],
 				Target: userIDToLogin[edge.T.ID()],
 				Value:  freq,
 			})
 		}
 
-		forceGraph := forceGraph{
+		forceGraph := ForceGraph{
 			Nodes: forceGraphNodes,
 			Links: forceGraphLinks,
 		}
