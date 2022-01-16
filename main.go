@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math"
 	"os"
 
 	"github.com/google/go-github/v41/github"
@@ -29,11 +30,24 @@ type ForceGraphNode struct {
 	Score     float64          `json:"score"`
 	Neighbors []string         `json:"neighbors"`
 	Links     []ForceGraphLink `json:"links"`
+	Group     string           `json:"group"`
 }
 
 type ForceGraph struct {
 	Nodes []ForceGraphNode `json:"nodes"`
 	Links []ForceGraphLink `json:"links"`
+}
+
+func bin(min, max, value float64, numberOfBins int) int {
+	binSize := (max - min) / float64(numberOfBins)
+	bin := int(math.Floor((value - min) / binSize))
+	if bin < 0 {
+		bin = 0
+	}
+	if bin >= numberOfBins {
+		bin = numberOfBins - 1
+	}
+	return bin
 }
 
 func loadPRs() []*PR {
@@ -66,6 +80,29 @@ func loadPRs() []*PR {
 	return prs
 }
 
+func EuclideanDistance(a, b []float64) float64 {
+	sum := 0.0
+	for i := 0; i < len(a); i++ {
+		sum += (a[i] - b[i]) * (a[i] - b[i])
+	}
+	return sum
+}
+
+func SquaredEuclideanDistance(a, b []float64) float64 {
+	sum := 0.0
+	for i := 0; i < len(a); i++ {
+		sum += (a[i] - b[i]) * (a[i] - b[i])
+	}
+	return sum
+}
+
+func CustomDistance(a, b []float64) float64 {
+	originVector := make([]float64, len(a))
+	originOffset := EuclideanDistance(a, originVector)
+	dist := math.Max(0, EuclideanDistance(a, b)-originOffset)
+	return dist
+}
+
 func main() {
 	prs := loadPRs()
 
@@ -77,15 +114,12 @@ func main() {
 		requestorID := pr.info.GetUser().GetID()
 		requestorLogin := pr.info.GetUser().GetLogin()
 
-		log.Printf("PR: %v", pr)
-
 		for _, review := range pr.reviews {
 			if review.GetState() != "APPROVED" {
 				continue
 			}
 			reviewerID := review.GetUser().GetID()
 			reviewerLogin := review.GetUser().GetLogin()
-			log.Printf("%s approved %s", reviewerLogin, requestorLogin)
 
 			if requestorLogin == "" || reviewerLogin == "" {
 				continue
@@ -116,11 +150,10 @@ func main() {
 	graph := simple.NewWeightedDirectedGraph(0, 0)
 
 	for edge, frequency := range edgeFrequency {
-		log.Printf("%v: %v", edge, frequency)
 		graph.SetWeightedEdge(simple.WeightedEdge{
 			F: edge.F,
 			T: edge.T,
-			W: float64(frequency) / float64(totalApprovalCount),
+			W: (float64(frequency) / float64(totalApprovalCount)) * 100,
 		})
 	}
 
@@ -154,6 +187,17 @@ func main() {
 		}
 	}
 
+	log.Printf("minRankScore: %f, maxRankScore: %f", minRankScore, maxRankScore)
+
+	numBuckets := 1
+	cursor := minRankScore
+	for cursor < maxRankScore {
+		log.Printf("%f", cursor)
+		cursor *= 2
+		numBuckets++
+	}
+	log.Printf("Num buckets: %d", numBuckets)
+
 	for id, rank := range pageRank {
 		links := []ForceGraphLink{}
 
@@ -169,11 +213,18 @@ func main() {
 
 		adjustedRank := 10 * ((rank - minRankScore) / (maxRankScore - minRankScore))
 
+		group := 1
+		for rank < maxRankScore {
+			rank *= 2
+			group++
+		}
+
 		forceGraphNodes = append(forceGraphNodes, ForceGraphNode{
 			ID:        userIDToLogin[id],
 			Score:     adjustedRank,
 			Neighbors: nodeToNeighbors[userIDToLogin[id]],
 			Links:     links,
+			Group:     fmt.Sprintf("%d", group),
 		})
 	}
 

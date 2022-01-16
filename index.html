@@ -48,6 +48,7 @@ const HighlightGraph = ({data}) => {
         highlightNodes.clear();
         highlightLinks.clear();
         if (node) {
+          console.log(node);
           highlightNodes.add(node);
           node.neighbors.forEach(neighbor => highlightNodes.add(neighbor));
           node.links.forEach(link => highlightLinks.add(link));
@@ -121,7 +122,7 @@ const HighlightGraph = ({data}) => {
     }
           extraRenderers={extraRenderers}
           graphData={data}
-          nodeAutoColorBy="id"
+          nodeAutoColorBy="group"
           nodeThreeObject={node => {
             const nodeEl = document.createElement('div');
             nodeEl.textContent = `${node.id}`;
