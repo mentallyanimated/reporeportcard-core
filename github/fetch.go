@@ -19,16 +19,16 @@ const (
 )
 
 // PullRequest is a type alias for github.PullRequest
-type PullRequest github.PullRequest
+type PullRequest = github.PullRequest
 
-type PullRequestReview github.PullRequestReview
+type PullRequestReview = github.PullRequestReview
 
-type CommitFile github.CommitFile
+type CommitFile = github.CommitFile
 
 type PullDetails struct {
-	pullRequest *github.PullRequest
-	reviews     []*github.PullRequestReview
-	files       []*github.CommitFile
+	PullRequest *PullRequest
+	Reviews     []*PullRequestReview
+	Files       []*CommitFile
 }
 
 // Metadata let's us store additional information about the data we're storing
@@ -125,24 +125,21 @@ func (c *Client) downloadReviews(ctx context.Context, pullNumber int) ([]*github
 			waitForRatelimit(resp)
 			continue
 		}
-
-		for _, review := range reviews {
-			if review.GetState() == "APPROVED" {
-				reviewBytes, err := json.Marshal(review)
-				if err != nil {
-					log.Printf("Error marshalling pull request review: %v", err)
-					return nil, errors.New("error marshalling pull request review")
-				}
-				c.cache.Put(fmt.Sprintf("%d/reviews", pullNumber), reviewBytes)
-				allReviews = append(allReviews, review)
-			}
-		}
+		allReviews = append(allReviews, reviews...)
 
 		if resp.NextPage == 0 {
 			break
 		}
 		opt.Page = resp.NextPage
 	}
+
+	reviewBytes, err := json.Marshal(allReviews)
+	if err != nil {
+		log.Printf("Error marshalling pull request review: %v", err)
+		return nil, errors.New("error marshalling pull request review")
+	}
+	c.cache.Put(fmt.Sprintf("%d/reviews", pullNumber), reviewBytes)
+
 	log.Printf("Downloaded pull requests reviews for %d", pullNumber)
 	return allReviews, nil
 }
@@ -156,22 +153,21 @@ func (c *Client) downloadFiles(ctx context.Context, pullNumber int) ([]*github.C
 			waitForRatelimit(resp)
 			continue
 		}
-
-		for _, file := range files {
-			fileBytes, err := json.Marshal(file)
-			if err != nil {
-				log.Printf("Error marshalling pull request files: %v", err)
-				return nil, errors.New("error marshalling pull request files")
-			}
-			c.cache.Put(fmt.Sprintf("%d/files", pullNumber), fileBytes)
-			allFiles = append(allFiles, file)
-		}
+		allFiles = append(allFiles, files...)
 
 		if resp.NextPage == 0 {
 			break
 		}
 		opt.Page = resp.NextPage
 	}
+
+	fileBytes, err := json.Marshal(allFiles)
+	if err != nil {
+		log.Printf("Error marshalling pull request files: %v", err)
+		return nil, errors.New("error marshalling pull request files")
+	}
+	c.cache.Put(fmt.Sprintf("%d/files", pullNumber), fileBytes)
+
 	log.Printf("Downloaded pull requests files for %d", pullNumber)
 	return allFiles, nil
 }
@@ -200,7 +196,7 @@ func (c *Client) DownloadPullDetails(ctx context.Context) error {
 		if 0 < len(*allPullDetails) {
 			c.updateMetadata(ctx, &Metadata{
 				LastModifiedTime: time.Now().UTC(),
-				LastPullNumber:   (*allPullDetails)[0].pullRequest.GetNumber(),
+				LastPullNumber:   (*allPullDetails)[0].PullRequest.GetNumber(),
 			})
 		} else {
 			log.Printf("No pull requests found")
@@ -247,9 +243,9 @@ func (c *Client) DownloadPullDetails(ctx context.Context) error {
 				}
 
 				allPullDetails = append(allPullDetails, &PullDetails{
-					pullRequest: pr,
-					reviews:     reviews,
-					files:       files,
+					PullRequest: pr,
+					Reviews:     reviews,
+					Files:       files,
 				})
 			}
 		}
@@ -258,7 +254,7 @@ func (c *Client) DownloadPullDetails(ctx context.Context) error {
 			break
 		}
 		opt.Page = resp.NextPage
-		log.Printf("Last downloaded: %d", allPullDetails[len(allPullDetails)-1].pullRequest.GetNumber())
+		log.Printf("Last downloaded: %d", allPullDetails[len(allPullDetails)-1].PullRequest.GetNumber())
 	}
 	log.Printf("Downloaded %d pull requests", len(allPullDetails))
 	return nil
