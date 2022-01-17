@@ -7,6 +7,10 @@ import (
 	"github.com/peterbourgon/diskv/v3"
 )
 
+const (
+	CACHE_PREFIX = ".disk-cache"
+)
+
 func folderTransform(key string) *diskv.PathKey {
 	path := strings.Split(key, "/")
 	last := len(path) - 1
@@ -52,7 +56,7 @@ func NewDisk(owner string, repo string) *Disk {
 	return &Disk{
 		diskv: diskv.New(
 			diskv.Options{
-				BasePath:          fmt.Sprintf(".disk-cache/%s/%s", owner, repo),
+				BasePath:          fmt.Sprintf("%s/%s/%s", CACHE_PREFIX, owner, repo),
 				AdvancedTransform: folderTransform,
 				InverseTransform:  inverseFolderTransform,
 			},

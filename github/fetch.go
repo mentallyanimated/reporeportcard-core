@@ -188,7 +188,7 @@ func (c *Client) DownloadPullDetails(ctx context.Context) error {
 		return nil
 	}
 
-	log.Printf("metadata: %v", metadata)
+	log.Printf("Metadata: %#v", metadata)
 
 	allPullDetails := []*PullDetails{}
 	opt := &github.PullRequestListOptions{}
