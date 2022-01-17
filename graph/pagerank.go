@@ -6,7 +6,9 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/mentallyanimated/reporeportcard-core/github"
 	"github.com/mentallyanimated/reporeportcard-core/store"
@@ -33,8 +35,10 @@ type forceGraph struct {
 	Links []forceGraphLink `json:"links"`
 }
 
-// importRawData assumes that you've downloaded the data from the github API already and that it exists on disk.
-func importRawData(owner, repo string) []*github.PullDetails {
+// ImportRawData assumes that you've downloaded the data from the github API
+// already and that it exists on disk. This will load every single pull request
+// into memory.
+func ImportRawData(owner, repo string) []*github.PullDetails {
 	rootDirName := fmt.Sprintf("%s/%s/%s", store.CACHE_PREFIX, owner, repo)
 	allPullDetails := []*github.PullDetails{}
 
@@ -53,7 +57,6 @@ func importRawData(owner, repo string) []*github.PullDetails {
 			continue
 		}
 
-		log.Printf("Reading file: %s", fileInfo.Name())
 		pullBytes, err := ioutil.ReadFile(fmt.Sprintf("%s/%s", rootDirName, fileInfo.Name()))
 		if err != nil {
 			log.Printf("Error parsing pull details: %s", err)
@@ -72,7 +75,6 @@ func importRawData(owner, repo string) []*github.PullDetails {
 			log.Printf("Error reading reviews: %s", err)
 			return nil
 		}
-		log.Printf("%v", string(reviewBytes))
 
 		var reviews []*github.PullRequestReview
 		err = json.Unmarshal(reviewBytes, &reviews)
@@ -105,17 +107,42 @@ func importRawData(owner, repo string) []*github.PullDetails {
 	return allPullDetails
 }
 
-func BuildForceGraph(owner, repo string) {
-	prs := importRawData(owner, repo)
+// FilterPullDetailsByTime does a client side filtering of the pull details
+func FilterPullDetailsByTime(pullDetails []*github.PullDetails, start, end time.Time) []*github.PullDetails {
+	// TODO: Handle unspecified start/end times
+
+	filteredPullDetails := []*github.PullDetails{}
+
+	// Sort by GetCreatedAt
+	sort.Slice(pullDetails, func(i, j int) bool {
+		return pullDetails[i].PullRequest.GetCreatedAt().Before(pullDetails[j].PullRequest.GetCreatedAt())
+	})
+
+	for _, pullDetail := range pullDetails {
+		if pullDetail.PullRequest.GetCreatedAt().Before(start) {
+			continue
+		}
+		if pullDetail.PullRequest.GetCreatedAt().After(end) {
+			break
+		}
+		filteredPullDetails = append(filteredPullDetails, pullDetail)
+	}
+
+	return filteredPullDetails
+}
+
+func BuildForceGraph(owner, repo string, pullDetails []*github.PullDetails) {
+	log.Printf("Building force graph for %s/%s out of %d pull requests", owner, repo, len(pullDetails))
+
 	userIDToLogin := map[int64]string{}
 	edgeFrequency := map[simple.Edge]int{}
 	totalApprovalCount := 0
 
-	for _, pr := range prs {
-		requestorID := pr.PullRequest.GetUser().GetID()
-		requestorLogin := pr.PullRequest.GetUser().GetLogin()
+	for _, pullDetail := range pullDetails {
+		requestorID := pullDetail.PullRequest.GetUser().GetID()
+		requestorLogin := pullDetail.PullRequest.GetUser().GetLogin()
 
-		for _, review := range pr.Reviews {
+		for _, review := range pullDetail.Reviews {
 			if review.GetState() != "APPROVED" {
 				continue
 			}
@@ -234,4 +261,6 @@ func BuildForceGraph(owner, repo string) {
 	f, _ := os.Create("force-graph.json")
 	defer f.Close()
 	json.NewEncoder(f).Encode(forceGraph)
+
+	log.Printf("Wrote force graph to force-graph.json")
 }

@@ -198,8 +198,6 @@ func (c *Client) DownloadPullDetails(ctx context.Context) error {
 				LastModifiedTime: time.Now().UTC(),
 				LastPullNumber:   (*allPullDetails)[0].PullRequest.GetNumber(),
 			})
-		} else {
-			log.Printf("No pull requests found")
 		}
 	}(&allPullDetails)
 
