@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"math"
 	"os"
 
@@ -186,17 +185,6 @@ func main() {
 			maxRankScore = rank
 		}
 	}
-
-	log.Printf("minRankScore: %f, maxRankScore: %f", minRankScore, maxRankScore)
-
-	numBuckets := 1
-	cursor := minRankScore
-	for cursor < maxRankScore {
-		log.Printf("%f", cursor)
-		cursor *= 2
-		numBuckets++
-	}
-	log.Printf("Num buckets: %d", numBuckets)
 
 	for id, rank := range pageRank {
 		links := []ForceGraphLink{}
