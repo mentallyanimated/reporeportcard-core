@@ -3,9 +3,9 @@ package graph
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -131,7 +131,7 @@ func FilterPullDetailsByTime(pullDetails []*github.PullDetails, start, end time.
 	return filteredPullDetails
 }
 
-func BuildForceGraph(owner, repo string, pullDetails []*github.PullDetails) {
+func BuildForceGraph(owner, repo string, pullDetails []*github.PullDetails, w io.Writer) {
 	log.Printf("Building force graph for %s/%s out of %d pull requests", owner, repo, len(pullDetails))
 
 	userIDToLogin := map[int64]string{}
@@ -258,9 +258,5 @@ func BuildForceGraph(owner, repo string, pullDetails []*github.PullDetails) {
 		Links: forceGraphLinks,
 	}
 
-	f, _ := os.Create("force-graph.json")
-	defer f.Close()
-	json.NewEncoder(f).Encode(forceGraph)
-
-	log.Printf("Wrote force graph to force-graph.json")
+	json.NewEncoder(w).Encode(forceGraph)
 }

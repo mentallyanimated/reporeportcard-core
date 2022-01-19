@@ -4,10 +4,9 @@ import (
 	"context"
 	"flag"
 	"os"
-	"time"
 
 	"github.com/mentallyanimated/reporeportcard-core/github"
-	"github.com/mentallyanimated/reporeportcard-core/graph"
+	"github.com/mentallyanimated/reporeportcard-core/server"
 	"github.com/mentallyanimated/reporeportcard-core/store"
 )
 
@@ -31,9 +30,12 @@ func main() {
 	client := github.NewClient(ctx, os.Getenv("GITHUB_TOKEN"), cache, owner, repo)
 	client.DownloadPullDetails(ctx)
 
-	pullDetails := graph.ImportRawData(owner, repo)
-	// filteredPullDetails := graph.FilterPullDetailsByTime(pullDetails, time.Unix(0, 0), time.Now())
-	filteredPullDetails := graph.FilterPullDetailsByTime(pullDetails, time.Now().Add(-time.Hour*24*14), time.Now())
+	server := server.NewServer()
+	server.Start()
 
-	graph.BuildForceGraph(owner, repo, filteredPullDetails)
+	// pullDetails := graph.ImportRawData(owner, repo)
+	// filteredPullDetails := graph.FilterPullDetailsByTime(pullDetails, time.Unix(0, 0), time.Now())
+	// // filteredPullDetails := graph.FilterPullDetailsByTime(pullDetails, time.Now().Add(-time.Hour*24*14), time.Now())
+
+	// graph.BuildForceGraph(owner, repo, filteredPullDetails, os.Stdout)
 }

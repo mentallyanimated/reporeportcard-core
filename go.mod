@@ -3,8 +3,8 @@ module github.com/mentallyanimated/reporeportcard-core
 go 1.17
 
 require (
+	github.com/go-chi/chi/v5 v5.0.7
 	github.com/google/go-github/v41 v41.0.0
-	github.com/mpraski/clusters v0.0.0-20171016094157-18104487c312
 	github.com/peterbourgon/diskv/v3 v3.0.1
 	github.com/stretchr/testify v1.7.0
 	golang.org/x/oauth2 v0.0.0-20180821212333-d2e6202438be
