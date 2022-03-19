@@ -1,13 +1,10 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"os"
 
-	"github.com/mentallyanimated/reporeportcard-core/github"
 	"github.com/mentallyanimated/reporeportcard-core/server"
-	"github.com/mentallyanimated/reporeportcard-core/store"
 )
 
 func main() {
@@ -20,15 +17,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	owner := *ownerFlag
-	repo := *repoFlag
+	// owner := *ownerFlag
+	// repo := *repoFlag
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// ctx, cancel := context.WithCancel(context.Background())
+	// defer cancel()
 
-	cache := store.NewDisk(owner, repo)
-	client := github.NewClient(ctx, os.Getenv("GITHUB_TOKEN"), cache, owner, repo)
-	client.DownloadPullDetails(ctx)
+	// cache := store.NewDisk(owner, repo)
+	// client := github.NewClient(ctx, os.Getenv("GITHUB_TOKEN"), cache, owner, repo)
+	// client.DownloadPullDetails(ctx)
 
 	server := server.NewServer()
 	server.Start()
