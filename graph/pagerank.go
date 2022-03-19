@@ -6,8 +6,10 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mentallyanimated/reporeportcard-core/github"
@@ -40,13 +42,14 @@ type forceGraph struct {
 // into memory.
 func ImportRawData(owner, repo string) []*github.PullDetails {
 	rootDirName := fmt.Sprintf("%s/%s/%s", store.CACHE_PREFIX, owner, repo)
-	allPullDetails := []*github.PullDetails{}
 
 	fileInfos, err := ioutil.ReadDir(rootDirName)
 	if err != nil {
 		log.Printf("Error reading directory: %s", err)
 		return nil
 	}
+
+	filteredFileInfos := []os.FileInfo{}
 
 	for _, fileInfo := range fileInfos {
 		if fileInfo.IsDir() {
@@ -57,52 +60,79 @@ func ImportRawData(owner, repo string) []*github.PullDetails {
 			continue
 		}
 
-		pullBytes, err := ioutil.ReadFile(fmt.Sprintf("%s/%s", rootDirName, fileInfo.Name()))
-		if err != nil {
-			log.Printf("Error parsing pull details: %s", err)
-			return nil
-		}
-
-		var pull *github.PullRequest
-		err = json.Unmarshal(pullBytes, &pull)
-		if err != nil {
-			log.Printf("Error parsing pull: %s", err)
-			return nil
-		}
-
-		reviewBytes, err := ioutil.ReadFile(fmt.Sprintf("%s/%d/reviews.json", rootDirName, pull.GetNumber()))
-		if err != nil {
-			log.Printf("Error reading reviews: %s", err)
-			return nil
-		}
-
-		var reviews []*github.PullRequestReview
-		err = json.Unmarshal(reviewBytes, &reviews)
-		if err != nil {
-			log.Printf("Error parsing reviews: %s", err)
-			return nil
-		}
-
-		filesBytes, err := ioutil.ReadFile(fmt.Sprintf("%s/%d/files.json", rootDirName, pull.GetNumber()))
-		if err != nil {
-			log.Printf("Error reading files: %s", err)
-			return nil
-		}
-
-		var files []*github.CommitFile
-		err = json.Unmarshal(filesBytes, &files)
-		if err != nil {
-			log.Printf("Error parsing files: %s", err)
-			return nil
-		}
-
-		pullDetails := &github.PullDetails{
-			PullRequest: pull,
-			Reviews:     reviews,
-			Files:       files,
-		}
-		allPullDetails = append(allPullDetails, pullDetails)
+		filteredFileInfos = append(filteredFileInfos, fileInfo)
 	}
+
+	allPullDetails := make([]*github.PullDetails, len(filteredFileInfos), len(filteredFileInfos))
+
+	type FileInfoTuple struct {
+		Index    int
+		FileInfo os.FileInfo
+	}
+
+	fileInfoCh := make(chan *FileInfoTuple)
+	go func() {
+		for i, fileInfo := range filteredFileInfos {
+			fileInfoCh <- &FileInfoTuple{i, fileInfo}
+		}
+		close(fileInfoCh)
+	}()
+
+	var wg sync.WaitGroup
+	for fileInfoTuple := range fileInfoCh {
+		i, fileInfo := fileInfoTuple.Index, fileInfoTuple.FileInfo
+		wg.Add(1)
+		go func(i int, fileInfo os.FileInfo) {
+			pullBytes, err := ioutil.ReadFile(fmt.Sprintf("%s/%s", rootDirName, fileInfo.Name()))
+			if err != nil {
+				log.Printf("Error parsing pull details: %s", err)
+				return
+			}
+
+			var pull *github.PullRequest
+			err = json.Unmarshal(pullBytes, &pull)
+			if err != nil {
+				log.Printf("Error parsing pull: %s", err)
+				return
+			}
+
+			reviewBytes, err := ioutil.ReadFile(fmt.Sprintf("%s/%d/reviews.json", rootDirName, pull.GetNumber()))
+			if err != nil {
+				log.Printf("Error reading reviews: %s", err)
+				return
+			}
+
+			var reviews []*github.PullRequestReview
+			err = json.Unmarshal(reviewBytes, &reviews)
+			if err != nil {
+				log.Printf("Error parsing reviews: %s", err)
+				return
+			}
+
+			filesBytes, err := ioutil.ReadFile(fmt.Sprintf("%s/%d/files.json", rootDirName, pull.GetNumber()))
+			if err != nil {
+				log.Printf("Error reading files: %s", err)
+				return
+			}
+
+			var files []*github.CommitFile
+			err = json.Unmarshal(filesBytes, &files)
+			if err != nil {
+				log.Printf("Error parsing files: %s", err)
+				return
+			}
+
+			pullDetails := &github.PullDetails{
+				PullRequest: pull,
+				Reviews:     reviews,
+				Files:       files,
+			}
+			allPullDetails[i] = pullDetails
+			wg.Done()
+		}(i, fileInfo)
+	}
+
+	wg.Wait()
 
 	return allPullDetails
 }

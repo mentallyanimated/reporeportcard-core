@@ -35,7 +35,7 @@ func main() {
 
 	// pullDetails := graph.ImportRawData(owner, repo)
 	// filteredPullDetails := graph.FilterPullDetailsByTime(pullDetails, time.Unix(0, 0), time.Now())
-	// // filteredPullDetails := graph.FilterPullDetailsByTime(pullDetails, time.Now().Add(-time.Hour*24*14), time.Now())
+	// // filteredPullDetails := graph.FilterPullDetailsByTime(pullDetails, time.Now().Add(-time.Hour*24*365), time.Now())
 
 	// graph.BuildForceGraph(owner, repo, filteredPullDetails, os.Stdout)
 }

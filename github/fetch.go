@@ -12,6 +12,7 @@ import (
 	"github.com/google/go-github/v41/github"
 	"github.com/mentallyanimated/reporeportcard-core/store"
 	"golang.org/x/oauth2"
+	"golang.org/x/time/rate"
 )
 
 const (
@@ -39,10 +40,11 @@ type Metadata struct {
 }
 
 type Client struct {
-	cache  store.Store
-	client *github.Client
-	owner  string
-	repo   string
+	cache   store.Store
+	client  *github.Client
+	owner   string
+	repo    string
+	limiter *rate.Limiter
 }
 
 func waitForRatelimit(r *github.Response) {
@@ -66,10 +68,11 @@ func NewClient(ctx context.Context, token string, cache store.Store, owner, repo
 	oauth2Client := oauth2.NewClient(ctx, tokenSource)
 	githubClient := github.NewClient(oauth2Client)
 	return &Client{
-		cache:  cache,
-		client: githubClient,
-		owner:  owner,
-		repo:   repo,
+		cache:   cache,
+		client:  githubClient,
+		owner:   owner,
+		repo:    repo,
+		limiter: rate.NewLimiter(rate.Limit(5000/3600), 1),
 	}
 }
 
@@ -120,8 +123,10 @@ func (c *Client) downloadReviews(ctx context.Context, pullNumber int) ([]*github
 	allReviews := []*github.PullRequestReview{}
 	opt := &github.ListOptions{}
 	for {
+		c.limiter.Wait(ctx)
 		reviews, resp, err := c.client.PullRequests.ListReviews(ctx, c.owner, c.repo, pullNumber, opt)
 		if err != nil {
+			log.Printf("Error listing reviews: %v", err)
 			waitForRatelimit(resp)
 			continue
 		}
@@ -148,8 +153,10 @@ func (c *Client) downloadFiles(ctx context.Context, pullNumber int) ([]*github.C
 	allFiles := []*github.CommitFile{}
 	opt := &github.ListOptions{}
 	for {
+		c.limiter.Wait(ctx)
 		files, resp, err := c.client.PullRequests.ListFiles(ctx, c.owner, c.repo, pullNumber, opt)
 		if err != nil {
+			log.Printf("Error listing files: %v", err)
 			waitForRatelimit(resp)
 			continue
 		}
@@ -202,6 +209,8 @@ func (c *Client) DownloadPullDetails(ctx context.Context) error {
 	}(&allPullDetails)
 
 	for {
+		c.limiter.Wait(ctx)
+
 		pullRequests, resp, err := c.client.PullRequests.List(ctx, c.owner, c.repo, &github.PullRequestListOptions{
 			State: "closed",
 			ListOptions: github.ListOptions{
@@ -210,6 +219,7 @@ func (c *Client) DownloadPullDetails(ctx context.Context) error {
 			},
 		})
 		if err != nil {
+			log.Printf("Error listing pull requests: %v", err)
 			waitForRatelimit(resp)
 			continue
 		}
