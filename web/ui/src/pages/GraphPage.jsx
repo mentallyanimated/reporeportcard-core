@@ -1,4 +1,4 @@
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import useSWR from 'swr';
 import HighlightGraph from '../components/HighlightGraph';
 
@@ -25,13 +25,16 @@ const GraphPage = () => {
 
   const { data, error } = useSWR(url, fetcher);
 
-  if (error) return <div>failed to load</div>;
+  if (error) return (
+    <div>
+      <div>failed to load</div>
+      <span>{error.message}</span>
+    </div>
+  );
   if (!data) return <div>loading...</div>;
 
   return (
-    <>
-      <HighlightGraph data={data} />
-    </>
+    <HighlightGraph data={data} />
   );
 }
 
