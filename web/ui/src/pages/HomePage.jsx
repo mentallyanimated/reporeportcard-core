@@ -1,12 +1,14 @@
 import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+const fourteenDaysInMilliseconds = 1209600000;
+
 const HomePage = () => {
   const navigate = useNavigate();
   const [owner, setOwner] = useState("");
   const [repo, setRepo] = useState("");
-  const [startDate, setStartDate] = useState(null);
-  const [endDate, setEndDate] = useState(null);
+  const [startDate, setStartDate] = useState(new Date(Date.now() - fourteenDaysInMilliseconds).toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
 
   const submit = useCallback(async (event) => {
     event.preventDefault();
@@ -31,7 +33,6 @@ const HomePage = () => {
         <div>
           <label htmlFor="repo">Who is the repo repo</label>
           <input
-            autoFocus
             type="text"
             name="repo"
             id="repo"
@@ -43,7 +44,6 @@ const HomePage = () => {
         <div>
           <label htmlFor="start">Pick the start date for your graph</label>
           <input
-            autoFocus
             type="date"
             name="start"
             id="start"
@@ -55,7 +55,6 @@ const HomePage = () => {
         <div>
           <label htmlFor="end">Pick the end date for your graph</label>
           <input
-            autoFocus
             type="date"
             name="end"
             id="end"
