@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/mentallyanimated/reporeportcard-core/graph"
+	"github.com/rs/cors"
 )
 
 type Server struct {
@@ -23,7 +24,7 @@ func NewServer() *Server {
 	router := chi.NewRouter()
 	httpServer := &http.Server{
 		Addr:    ":8080",
-		Handler: router,
+		Handler: cors.Default().Handler(router),
 	}
 	s := &Server{
 		httpServer: httpServer,
