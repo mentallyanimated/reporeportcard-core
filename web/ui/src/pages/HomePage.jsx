@@ -24,6 +24,7 @@ const HomePage = () => {
             name="owner"
             id="owner"
             onChange={(event) => setOwner(event.target.value)}
+            value={owner}
           />
         </div>
 
@@ -35,6 +36,7 @@ const HomePage = () => {
             name="repo"
             id="repo"
             onChange={(event) => setRepo(event.target.value)}
+            value={repo}
           />
         </div>
 
@@ -46,6 +48,7 @@ const HomePage = () => {
             name="start"
             id="start"
             onChange={(event) => setStartDate(event.target.value)}
+            value={startDate}
           />
         </div>
 
@@ -57,6 +60,7 @@ const HomePage = () => {
             name="end"
             id="end"
             onChange={(event) => setEndDate(event.target.value)}
+            value={endDate}
           />
         </div>
 
