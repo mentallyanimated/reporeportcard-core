@@ -73,10 +73,10 @@ func (s *Server) graph() http.HandlerFunc {
 		end := time.Now()
 
 		if startParam != "" {
-			start, _ = time.Parse(time.RFC3339, startParam)
+			start, _ = time.Parse("2006-01-02", startParam)
 		}
 		if endParam != "" {
-			end, _ = time.Parse(time.RFC3339, endParam)
+			end, _ = time.Parse("2006-01-02", endParam)
 		}
 
 		startExec := time.Now()

@@ -1,14 +1,20 @@
+import { useParams, useSearchParams } from 'react-router-dom';
 import useSWR from 'swr';
-import HighlightGraph from './components/HighlightGraph';
+import HighlightGraph from '../components/HighlightGraph';
 
 const fetcher = async (url) => {
-  console.log(url);
   const res = await fetch(url);
   const data = await res.json();
   return data;
 };
 
-const GraphPage = ({ repo, owner, start, end }) => {
+const GraphPage = () => {
+  const [params] = useSearchParams();
+  const owner = params.get('owner');
+  const repo = params.get('repo');
+  const start = params.get('start');
+  const end = params.get('end');
+
   let url = `http://localhost:8080/graph?owner=${owner}&repo=${repo}`;
   if (start) {
     url += `&start=${start}`;
