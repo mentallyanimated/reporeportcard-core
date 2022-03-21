@@ -1,14 +1,15 @@
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { useSessionStorage } from "react-use";
 
 const fourteenDaysInMilliseconds = 1209600000;
 
 const HomePage = () => {
   const navigate = useNavigate();
-  const [owner, setOwner] = useState("");
-  const [repo, setRepo] = useState("");
-  const [startDate, setStartDate] = useState(new Date(Date.now() - fourteenDaysInMilliseconds).toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [owner, setOwner] = useSessionStorage("owner", "abatilo");
+  const [repo, setRepo] = useSessionStorage("repo", "blog");
+  const [startDate, setStartDate] = useSessionStorage("start", new Date(Date.now() - fourteenDaysInMilliseconds).toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useSessionStorage("end", new Date().toISOString().split('T')[0]);
 
   const submit = useCallback(async (event) => {
     event.preventDefault();

@@ -11,6 +11,7 @@
     "react-force-graph-3d": "^1.21.12",
     "react-router-dom": "^6.2.2",
     "react-scripts": "5.0.0",
+    "react-use": "^17.3.2",
     "swr": "^1.2.2",
     "three": "^0.138.3",
     "web-vitals": "^2.1.4"
